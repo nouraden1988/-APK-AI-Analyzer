@@ -15,6 +15,25 @@ class MainActivity : Activity() {
 
     private lateinit var output: TextView
 
+    private val keywords = listOf(
+        "premium",
+        "subscription",
+        "subscribe",
+        "pro_version",
+        "is_premium",
+        "isPro",
+        "paid",
+        "purchase",
+        "billing",
+        "license",
+        "entitlement",
+        "unlock",
+        "feature_locked",
+        "trial",
+        "in_app_purchase",
+        "google_play_billing"
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -33,30 +52,33 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "محلل تطبيقات أندرويد الذكي"
+            text = "محلل التطبيقات الذكي v2.0"
             textSize = 18f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
         }
 
         val button = Button(this).apply {
-            text = "📦 اختر ملف APK"
+            text = "📦 اختيار ملف APK"
             textSize = 17f
+
             setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                val intent = Intent(
+                    Intent.ACTION_OPEN_DOCUMENT
+                ).apply {
                     type = "application/vnd.android.package-archive"
                     addCategory(Intent.CATEGORY_OPENABLE)
                 }
+
                 startActivityForResult(intent, 100)
             }
         }
 
         output = TextView(this).apply {
-            text = "اختر تطبيقاً لبدء التحليل"
+            text = "اختر APK لبدء التحليل الذكي"
             textSize = 15f
             setTextColor(Color.WHITE)
             setPadding(12, 25, 12, 25)
-            textDirection = android.view.View.TEXT_DIRECTION_FIRST_STRONG
         }
 
         root.addView(title)
@@ -68,9 +90,7 @@ class MainActivity : Activity() {
 
         root.addView(
             scroll,
-            LinearLayout.LayoutParams(
-                -1, 0, 1f
-            )
+            LinearLayout.LayoutParams(-1, 0, 1f)
         )
 
         setContentView(root)
@@ -82,10 +102,15 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
-        super.onActivityResult(requestCode, resultCode, data)
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
 
         if (requestCode == 100 &&
             resultCode == RESULT_OK) {
+
             data?.data?.let {
                 analyzeAPK(it)
             }
@@ -93,26 +118,39 @@ class MainActivity : Activity() {
     }
 
     private fun analyzeAPK(uri: Uri) {
-        output.text = "⏳ جارٍ تحليل التطبيق..."
+
+        output.text = "⏳ جارٍ فحص APK..."
 
         Thread {
-            try {
-                val file = File(cacheDir, "selected.apk")
 
-                contentResolver.openInputStream(uri)?.use { input ->
-                    file.outputStream().use { output ->
+            try {
+
+                val file = File(
+                    cacheDir,
+                    "analysis.apk"
+                )
+
+                contentResolver.openInputStream(uri)?.use {
+                    input ->
+                    file.outputStream().use {
+                        output ->
                         input.copyTo(output)
                     }
                 } ?: throw Exception("تعذر قراءة الملف")
 
-                val info = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                val info = if (
+                    android.os.Build.VERSION.SDK_INT >= 33
+                ) {
+
                     packageManager.getPackageArchiveInfo(
                         file.absolutePath,
                         PackageManager.PackageInfoFlags.of(
                             PackageManager.GET_PERMISSIONS.toLong()
                         )
                     )
+
                 } else {
+
                     @Suppress("DEPRECATION")
                     packageManager.getPackageArchiveInfo(
                         file.absolutePath,
@@ -121,78 +159,38 @@ class MainActivity : Activity() {
                 } ?: throw Exception("ملف APK غير صالح")
 
                 val dexFiles = mutableListOf<String>()
-                val otherFiles = mutableListOf<String>()
+                val libraries = mutableListOf<String>()
+                val findings = mutableListOf<String>()
 
                 ZipFile(file).use { zip ->
+
                     val entries = zip.entries()
 
                     while (entries.hasMoreElements()) {
-                        val name = entries.nextElement().name
+
+                        val entry = entries.nextElement()
+                        val name = entry.name
 
                         if (name.endsWith(".dex")) {
+
                             dexFiles.add(name)
-                        }
 
-                        if (name.endsWith(".so")) {
-                            otherFiles.add(name)
-                        }
-                    }
-                }
+                            val bytes = zip.getInputStream(
+                                entry
+                            ).use {
+                                it.readBytes()
+                            }
 
-                val permissions =
-                    info.requestedPermissions?.joinToString("\n") {
-                        "• $it"
-                    } ?: "لا توجد صلاحيات"
+                            val content = String(
+                                bytes,
+                                Charsets.ISO_8859_1
+                            )
 
-                val version = info.versionName ?: "غير معروف"
+                            for (keyword in keywords) {
 
-                val report = """
-                    ✅ اكتمل التحليل الأولي
+                                val index = content.indexOf(
+                                    keyword,
+                                    ignoreCase = true
+                                )
 
-                    📱 معلومات التطبيق
-
-                    اسم الحزمة:
-                    ${info.packageName}
-
-                    الإصدار:
-                    $version
-
-                    حجم APK:
-                    ${file.length() / 1024} KB
-
-                    📂 ملفات DEX:
-                    ${dexFiles.size}
-
-                    ${dexFiles.joinToString("\n")}
-
-                    📚 المكتبات الأصلية:
-                    ${otherFiles.size}
-
-                    ${otherFiles.take(30).joinToString("\n")}
-
-                    🔐 الصلاحيات:
-
-                    $permissions
-
-                    ━━━━━━━━━━━━━━━
-
-                    ملاحظة:
-                    هذا تحليل أولي لبنية APK.
-                    تحليل Smali واكتشاف آليات
-                    الاشتراك والحماية سيضاف
-                    في المراحل القادمة.
-                """.trimIndent()
-
-                runOnUiThread {
-                    output.text = report
-                }
-
-            } catch (e: Exception) {
-                runOnUiThread {
-                    output.text =
-                        "❌ فشل التحليل:\n${e.message}"
-                }
-            }
-        }.start()
-    }
-}
+                                if (index
